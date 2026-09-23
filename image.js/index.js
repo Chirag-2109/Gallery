@@ -1,12 +1,57 @@
-let root=document.getElementById('root')
-let file=document.getElementById('file')
-let div=document.createElement('div')
-div.id="container"
+
+let root = document.getElementById('root')
+let file = document.getElementById('file')
+
+let div = document.createElement('div')
+div.id = "container"
 root.appendChild(div)
 
 let imageHashes = new Set()
 
+let db
+
+// -----------------------------
+// OPEN INDEXEDDB DATABASE
+// ----------------------------
+
+let dbRequest = indexedDB.open("ImageGallery", 1)
+
+dbRequest.onupgradeneeded = (event) => {
+
+    let database = event.target.result
+
+    if (!database.objectStoreNames.contains("images")) {
+
+        database.createObjectStore("images", {
+            keyPath: "hash"
+        })
+
+    }
+}
+
+dbRequest.onsuccess = (event) => {
+
+    db = event.target.result
+
+    console.log("Database connected successfully")
+
+    loadImages()
+
+}
+
+dbRequest.onerror = () => {
+
+    console.log("Database connection failed")
+
+}
+
+
+// -----------------------------
+// GENERATE IMAGE HASH
+// -----------------------------
+
 async function generateHash(element) {
+
     let buffer = await element.arrayBuffer()
 
     let hashBuffer = await crypto.subtle.digest(
@@ -14,80 +59,123 @@ async function generateHash(element) {
         buffer
     )
 
-    let hashArray = Array.from(new Uint8Array(hashBuffer))
+    let hashArray = Array.from(
+        new Uint8Array(hashBuffer)
+    )
 
     let hash = hashArray
         .map(byte => byte.toString(16).padStart(2, '0'))
         .join('')
 
     return hash
+
 }
 
 
-file.addEventListener('change', async (event) => {
+// -----------------------------
+// DISPLAY IMAGE
+// -----------------------------
+
+function displayImage(element) {
+
+    let bg = document.createElement('img')
+
+    bg.src = URL.createObjectURL(element)
+
+    bg.style.height = "200px"
+    bg.style.width = "200px"
+    bg.style.objectFit = "cover"
+
+    div.append(bg)
+
+}
+
+
+// -----------------------------
+// LOAD SAVED IMAGES
+// -----------------------------
+
+function loadImages() {
+
+    let transaction = db.transaction(
+        "images",
+        "readonly"
+    )
+
+    let store = transaction.objectStore("images")
+
+    let request = store.getAll()
+
+    request.onsuccess = () => {
+
+        let images = request.result
+
+        images.forEach(element => {
+
+            imageHashes.add(element.hash)
+
+            displayImage(element.blob)
+
+        })
+
+    }
+
+}
+
+
+// -----------------------------
+// UPLOAD IMAGES
+// -----------------------------
+
+file.addEventListener('change', async () => {
+
+    if (!db) {
+
+        alert("Database is not ready. Please try again.")
+
+        return
+
+    }
 
     let files = Array.from(file.files)
-    console.log(files)
 
     for (let element of files) {
 
         let hash = await generateHash(element)
 
+        // Check if image already exists
         if (imageHashes.has(hash)) {
+
             alert("This image is already uploaded!")
+
             continue
+
         }
 
+        // Add hash to Set
         imageHashes.add(hash)
 
-        let bg = document.createElement('img')
+        // Save image to IndexedDB
+        let transaction = db.transaction(
+            "images",
+            "readwrite"
+        )
 
-        bg.src = URL.createObjectURL(element)
+        let store = transaction.objectStore("images")
 
-        bg.style.height = "200px"
-        bg.style.width = "200px"
-        bg.style.objectFit = "cover"
+        store.put({
 
-        div.append(bg)
+            hash: hash,
+            blob: element
+
+        })
+
+        // Display image on the page
+        displayImage(element)
+
     }
 
+    // Reset input so the same file can be selected again
     file.value = ""
+
 })
-
-
-
-
-
-// file.addEventListener('change',(event)=>{
-    
-//     let files = Array.from(file.files)
-//     console.log(files)
-//     // console.log(img.name)
-//     files.forEach(element=>{
-//         let bg=document.createElement('img')
-//         bg.src=element.name
-//         bg.style.height="200px"
-//         bg.style.width="200px"
-//         bg.style.objectFit="cover"
-//         div.append(bg)
-//     })
-
-
-        
-    
-
-
-    
-// })
-
-
-
-///1)alert function when 
-
-// allow only image file to be selected
-// max 10 files allowed once
-// same image cannot be uploaded again
-// on page reload images should be present not empty page again
-// image name can be changed name or directory can be changed but our system shouldn't allow same image to be uploaded again
-
-// only javascript no backend only frontend
